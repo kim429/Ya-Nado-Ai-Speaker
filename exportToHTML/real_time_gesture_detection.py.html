@@ -1,0 +1,415 @@
+<html>
+<head>
+<title>real_time_gesture_detection.py</title>
+<meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+<style type="text/css">
+.s0 { color: #808080; font-style: italic;}
+.s1 { color: #000000;}
+.s2 { color: #000080; font-weight: bold;}
+.s3 { color: #008000; font-weight: bold;}
+.s4 { color: #0000ff;}
+</style>
+</head>
+<body bgcolor="#ffffff">
+<table CELLSPACING=0 CELLPADDING=5 COLS=1 WIDTH="100%" BGCOLOR="#c0c0c0" >
+<tr><td><center>
+<font face="Arial, Helvetica" color="#000000">
+real_time_gesture_detection.py</font>
+</center></td></tr></table>
+<pre><span class="s0">#! /usr/bin/env python3</span>
+
+<span class="s2">import </span>copy
+<span class="s2">import </span>cv2
+<span class="s2">import </span>numpy <span class="s2">as </span>np
+<span class="s2">from </span>tensorflow.keras.models <span class="s2">import </span>load_model
+<span class="s2">from </span>phue <span class="s2">import </span>Bridge
+<span class="s2">from </span>soco <span class="s2">import </span>SoCo
+<span class="s2">import </span>pygame
+<span class="s2">import </span>time
+<span class="s2">import </span>threading
+<span class="s2">import </span>sys
+<span class="s0"># import tkinter</span>
+<span class="s0"># import tkinker.ttk</span>
+<span class="s2">from </span>PyQt5 <span class="s2">import </span>QtWidgets
+<span class="s2">from </span>PyQt5 <span class="s2">import </span>QtGui
+<span class="s2">from </span>PyQt5 <span class="s2">import </span>QtCore
+<span class="s0"># from PyQt5.QtWidgets import QApplication, QWidget, QLabel, QVBoxLayout</span>
+<span class="s2">from </span>PyQt5.QtCore <span class="s2">import </span>*
+<span class="s2">from </span>PyQt5.QtWidgets <span class="s2">import </span>*
+<span class="s2">from </span>PyQt5.QtGui <span class="s2">import </span>*
+
+
+<span class="s0"># General Settings</span>
+prediction = <span class="s3">''</span>
+action = <span class="s3">''</span>
+score = <span class="s4">0</span>
+img_counter = <span class="s4">500</span>
+
+
+<span class="s0"># pygame.event.wait()</span>
+
+<span class="s2">class </span>Volume(object):
+    <span class="s2">def </span>__init__(self):
+        self.level = <span class="s4">.5</span>
+
+    <span class="s2">def </span>increase(self, amount):
+        self.level += amount
+        print(<span class="s3">f'New level is: </span><span class="s2">{</span>self.level<span class="s2">}</span><span class="s3">'</span>)
+
+    <span class="s2">def </span>decrease(self, amount):
+        self.level -= amount
+        print(<span class="s3">f'New level is: </span><span class="s2">{</span>self.level<span class="s2">}</span><span class="s3">'</span>)
+
+
+vol = Volume()
+
+<span class="s0"># Turn on/off the ability to save images, or control Philips Hue/Sonos</span>
+save_images, selected_gesture = <span class="s2">False</span>, <span class="s3">'peace'</span>
+smart_home = <span class="s2">True</span>
+
+<span class="s0"># Philips Hue Settings</span>
+bridge_ip = <span class="s3">'192.168.0.95'</span>
+print(<span class="s3">'press the bridge button.'</span>)
+<span class="s0"># bridge_ip = input(&quot;your bridge ip: &quot;)</span>
+b = Bridge(bridge_ip)
+brightness = <span class="s4">254</span>
+on_command = {<span class="s3">'transitiontime'</span>: <span class="s4">0</span>, <span class="s3">'on'</span>: <span class="s2">True</span>, <span class="s3">'bri'</span>: brightness}
+off_command = {<span class="s3">'transitiontime'</span>: <span class="s4">0</span>, <span class="s3">'on'</span>: <span class="s2">False</span>}
+
+b.connect()
+
+<span class="s0"># Sonos Settings(deleted)</span>
+<span class="s0"># sonos_ip = '192.168.0.6'</span>
+<span class="s0"># sonos = SoCo(sonos_ip)</span>
+
+gesture_names = {<span class="s4">0</span>: <span class="s3">'Fist'</span>,
+                 <span class="s4">1</span>: <span class="s3">'L'</span>,
+                 <span class="s4">2</span>: <span class="s3">'Okay'</span>,
+                 <span class="s4">3</span>: <span class="s3">'Palm'</span>,
+                 <span class="s4">4</span>: <span class="s3">'Peace'</span>}
+
+model = load_model(<span class="s3">'./VGG_cross_validated.h5'</span>)
+
+
+<span class="s2">def </span>predict_rgb_image(img):
+    result = gesture_names[model.predict_classes(img)[<span class="s4">0</span>]]
+    print(result)
+    <span class="s2">return </span>(result)
+
+
+<span class="s2">def </span>predict_rgb_image_vgg(image):
+    image = np.array(image, dtype=<span class="s3">'float32'</span>)
+    image /= <span class="s4">255</span>
+    pred_array = model.predict(image)
+    print(<span class="s3">f'pred_array: </span><span class="s2">{</span>pred_array<span class="s2">}</span><span class="s3">'</span>)
+    result = gesture_names[np.argmax(pred_array)]
+    print(<span class="s3">f'Result: </span><span class="s2">{</span>result<span class="s2">}</span><span class="s3">'</span>)
+    print(max(pred_array[<span class="s4">0</span>]))
+    score = float(<span class="s3">&quot;%0.2f&quot; </span>% (max(pred_array[<span class="s4">0</span>]) * <span class="s4">100</span>))
+    print(result)
+    <span class="s2">return </span>result, score
+
+
+<span class="s0"># parameters</span>
+cap_region_x_begin = <span class="s4">0.5  </span><span class="s0"># start point/total width</span>
+cap_region_y_end = <span class="s4">0.8  </span><span class="s0"># start point/total width</span>
+threshold = <span class="s4">60  </span><span class="s0"># binary threshold</span>
+blurValue = <span class="s4">41  </span><span class="s0"># GaussianBlur parameter</span>
+bgSubThreshold = <span class="s4">50</span>
+learningRate = <span class="s4">0</span>
+bgModel = <span class="s2">None</span>
+
+<span class="s0"># variableslt</span>
+isBgCaptured = <span class="s4">0  </span><span class="s0"># bool, whether the background captured</span>
+triggerSwitch = <span class="s2">False  </span><span class="s0"># if true, keyboard simulator works</span>
+
+
+<span class="s2">def </span>remove_background(frame):
+    fgmask = bgModel.apply(frame, learningRate=learningRate)
+    kernel = np.ones((<span class="s4">3</span>, <span class="s4">3</span>), np.uint8)
+    fgmask = cv2.erode(fgmask, kernel, iterations=<span class="s4">1</span>)
+    res = cv2.bitwise_and(frame, frame, mask=fgmask)
+    <span class="s2">return </span>res
+
+
+<span class="s0"># Camera</span>
+camera = cv2.VideoCapture(<span class="s4">0</span>, cv2.CAP_DSHOW)
+camera.set(<span class="s4">10</span>, <span class="s4">200</span>)
+
+
+<span class="s2">def </span>run1():
+    isalreadyfist = <span class="s2">False</span>;
+    <span class="s2">while </span>camera.isOpened():
+        ret, frame = camera.read()
+        frame = cv2.bilateralFilter(frame, <span class="s4">5</span>, <span class="s4">50</span>, <span class="s4">100</span>)  <span class="s0"># smoothing filter</span>
+        frame = cv2.flip(frame, <span class="s4">1</span>)  <span class="s0"># flip the frame horizontally</span>
+        cv2.rectangle(frame, (int(cap_region_x_begin * frame.shape[<span class="s4">1</span>]), <span class="s4">0</span>),
+                      (frame.shape[<span class="s4">1</span>], int(cap_region_y_end * frame.shape[<span class="s4">0</span>])), (<span class="s4">255</span>, <span class="s4">0</span>, <span class="s4">0</span>), <span class="s4">2</span>)
+
+        cv2.imshow(<span class="s3">'original'</span>, frame)
+
+        <span class="s0"># Run once background is captured</span>
+        <span class="s2">global </span>isBgCaptured, prediction, score, action, smart_home, brightness
+        <span class="s2">if </span>isBgCaptured == <span class="s4">1</span>:
+            img = remove_background(frame)
+            img = img[<span class="s4">0</span>:int(cap_region_y_end * frame.shape[<span class="s4">0</span>]),
+                  int(cap_region_x_begin * frame.shape[<span class="s4">1</span>]):frame.shape[<span class="s4">1</span>]]  <span class="s0"># clip the ROI</span>
+            <span class="s0"># cv2.imshow('mask', img)</span>
+
+            <span class="s0"># convert the image into binary image</span>
+            gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+            blur = cv2.GaussianBlur(gray, (blurValue, blurValue), <span class="s4">0</span>)
+            <span class="s0"># cv2.imshow('blur', blur)</span>
+            ret, thresh = cv2.threshold(blur, threshold, <span class="s4">255</span>, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+            <span class="s0"># Add prediction and action text to thresholded image</span>
+            <span class="s0"># cv2.putText(thresh, f&quot;Prediction: {prediction} ({score}%)&quot;, (50, 50), cv2.FONT_HERSHEY_SIMPLEX, 1, (255,255,255))</span>
+            <span class="s0"># cv2.putText(thresh, f&quot;Action: {action}&quot;, (50, 100), cv2.FONT_HERSHEY_SIMPLEX, 1, (255,255,255))  # Draw the text</span>
+            <span class="s0"># Draw the text</span>
+            cv2.putText(thresh, <span class="s3">f&quot;Prediction: </span><span class="s2">{</span>prediction<span class="s2">} </span><span class="s3">(</span><span class="s2">{</span>score<span class="s2">}</span><span class="s3">%)&quot;</span>, (<span class="s4">50</span>, <span class="s4">30</span>), cv2.FONT_HERSHEY_SIMPLEX, <span class="s4">1</span>,
+                        (<span class="s4">255</span>, <span class="s4">255</span>, <span class="s4">255</span>))
+            cv2.putText(thresh, <span class="s3">f&quot;Action: </span><span class="s2">{</span>action<span class="s2">}</span><span class="s3">&quot;</span>, (<span class="s4">50</span>, <span class="s4">80</span>), cv2.FONT_HERSHEY_SIMPLEX, <span class="s4">1</span>,
+                        (<span class="s4">255</span>, <span class="s4">255</span>, <span class="s4">255</span>))  <span class="s0"># Draw the text</span>
+            cv2.imshow(<span class="s3">'ori'</span>, thresh)
+
+            <span class="s0"># get the contours</span>
+            thresh1 = copy.deepcopy(thresh)
+            <span class="s0"># _, contours, hierarchy = cv2.findContours(thresh1, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)</span>
+            contours, hierarchy = cv2.findContours(thresh1, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
+            length = len(contours)
+            maxArea = -<span class="s4">1</span>
+            <span class="s2">if </span>length &gt; <span class="s4">0</span>:
+                <span class="s2">for </span>i <span class="s2">in </span>range(length):  <span class="s0"># find the biggest contour (according to area)</span>
+                    temp = contours[i]
+                    area = cv2.contourArea(temp)
+                    <span class="s2">if </span>area &gt; maxArea:
+                        maxArea = area
+                        ci = i
+
+                res = contours[ci]
+                hull = cv2.convexHull(res)
+                drawing = np.zeros(img.shape, np.uint8)
+                cv2.drawContours(drawing, [res], <span class="s4">0</span>, (<span class="s4">0</span>, <span class="s4">255</span>, <span class="s4">0</span>), <span class="s4">2</span>)
+                cv2.drawContours(drawing, [hull], <span class="s4">0</span>, (<span class="s4">0</span>, <span class="s4">0</span>, <span class="s4">255</span>), <span class="s4">3</span>)
+
+            cv2.imshow(<span class="s3">'output'</span>, drawing)
+
+        <span class="s0"># Keyboard OP</span>
+        k = cv2.waitKey(<span class="s4">10</span>)
+        <span class="s2">if </span>k == <span class="s4">27</span>:  <span class="s0"># press ESC to exit all windows at any time</span>
+            <span class="s2">break</span>;
+        <span class="s2">elif </span>k == ord(<span class="s3">'b'</span>):  <span class="s0"># press 'b' to capture the background</span>
+            print(<span class="s3">'press b'</span>)
+            <span class="s2">global </span>bgModel
+            bgModel = cv2.createBackgroundSubtractorMOG2(<span class="s4">0</span>, bgSubThreshold)
+            b.set_light(<span class="s4">1</span>, on_command)
+            time.sleep(<span class="s4">2</span>)
+            isBgCaptured = <span class="s4">1</span>
+            print(<span class="s3">'Background captured'</span>)
+            pygame.init()
+            pygame.mixer.init()
+
+
+            <span class="s0"># pygame.mixer.music.set_pos(50)</span>
+            <span class="s0"># pygame.mixer.music.pause()</span>
+
+        <span class="s2">elif </span>k == ord(<span class="s3">'r'</span>):  <span class="s0"># press 'r' to reset the background</span>
+            time.sleep(<span class="s4">1</span>)
+            bgModel = <span class="s2">None</span>
+            triggerSwitch = <span class="s2">False</span>
+            isBgCaptured = <span class="s4">0</span>
+            print(<span class="s3">'Reset background'</span>)
+        <span class="s2">elif </span>k == <span class="s4">32</span>:
+            <span class="s0"># If space bar pressed</span>
+            cv2.imshow(<span class="s3">'original'</span>, frame)
+            <span class="s0"># copies 1 channel BW image to all 3 RGB channels</span>
+            target = np.stack((thresh,) * <span class="s4">3</span>, axis=-<span class="s4">1</span>)
+            target = cv2.resize(target, (<span class="s4">224</span>, <span class="s4">224</span>))
+            <span class="s0"># defalut setting value: 224</span>
+            target = target.reshape(<span class="s4">1</span>, <span class="s4">224</span>, <span class="s4">224</span>, <span class="s4">3</span>)
+            prediction, score = predict_rgb_image_vgg(target)
+
+            <span class="s2">if </span>smart_home:
+                <span class="s2">if </span>prediction == <span class="s3">'Palm'</span>:
+                    <span class="s2">try</span>:
+                        isalreadyfist = <span class="s2">False</span>
+                        action = <span class="s3">&quot;X&quot;</span>
+                        <span class="s0"># sonos.play()</span>
+                        <span class="s0"># pygame.mixer.music.unpause()</span>
+                    <span class="s0"># Turn off smart home actions if devices are not responding</span>
+                    <span class="s2">except </span>ConnectionError:
+                        smart_home = <span class="s2">False</span>
+                        <span class="s2">pass</span>
+
+                <span class="s2">elif </span>prediction == <span class="s3">'Fist'</span>:
+                    <span class="s2">try</span>:
+                        <span class="s2">if </span>isalreadyfist:
+                            action = <span class="s3">'Lights OFF'</span>
+                            b.set_light(<span class="s4">1</span>, off_command)
+                            isalreadyfist = <span class="s2">False</span>
+                        <span class="s2">else</span>:
+                            isalreadyfist = <span class="s2">True</span>
+
+                    <span class="s2">except </span>ConnectionError:
+                        smart_home = <span class="s2">False</span>
+                        <span class="s2">pass</span>
+
+                <span class="s2">elif </span>prediction == <span class="s3">'L'</span>:
+                    <span class="s2">try</span>:
+                        isalreadyfist = <span class="s2">False</span>
+                        action = <span class="s3">'sound1'</span>
+                        pygame.mixer.music.load(<span class="s3">'./audio/headache.MP3'</span>)
+                        pygame.mixer.music.play()
+
+                    <span class="s2">except </span>ConnectionError:
+                        smart_home = <span class="s2">False</span>
+                        <span class="s2">pass</span>
+
+                <span class="s2">elif </span>prediction == <span class="s3">'Okay'</span>:
+                    <span class="s2">try</span>:
+                        <span class="s2">if </span>isalreadyfist:
+                            action = <span class="s3">'Lights ON'</span>
+                            b.set_light(<span class="s4">1</span>, on_command)
+                            isalreadyfist = <span class="s2">False</span>
+                        <span class="s2">else</span>:
+                            pygame.mixer.music.load(<span class="s3">'./audio/wku.MP3'</span>)
+                            pygame.mixer.music.play()
+                    <span class="s2">except </span>ConnectionError:
+                        smart_home = <span class="s2">False</span>
+                        <span class="s2">pass</span>
+
+                <span class="s2">elif </span>prediction == <span class="s3">'Peace'</span>:
+                    <span class="s2">try</span>:
+                        isalreadyfist = <span class="s2">False</span>
+                        action = <span class="s3">'X'</span>
+                    <span class="s2">except </span>ConnectionError:
+                        smart_home = <span class="s2">False</span>
+                        <span class="s2">pass</span>
+
+                <span class="s2">else</span>:
+                    <span class="s2">pass</span>
+
+            <span class="s2">if </span>save_images:
+                img_name = <span class="s3">f&quot;./frames/drawings/drawing_</span><span class="s2">{</span>selected_gesture<span class="s2">}</span><span class="s3">_</span><span class="s2">{</span>img_counter<span class="s2">}</span><span class="s3">.jpg&quot;</span>.format(
+                    img_counter)
+                cv2.imwrite(img_name, drawing)
+                print(<span class="s3">&quot;{} written&quot;</span>.format(img_name))
+
+                img_name2 = <span class="s3">f&quot;./frames/silhouettes/</span><span class="s2">{</span>selected_gesture<span class="s2">}</span><span class="s3">_</span><span class="s2">{</span>img_counter<span class="s2">}</span><span class="s3">.jpg&quot;</span>.format(
+                    img_counter)
+                cv2.imwrite(img_name2, thresh)
+                print(<span class="s3">&quot;{} written&quot;</span>.format(img_name2))
+
+                img_name3 = <span class="s3">f&quot;./frames/masks/mask_</span><span class="s2">{</span>selected_gesture<span class="s2">}</span><span class="s3">_</span><span class="s2">{</span>img_counter<span class="s2">}</span><span class="s3">.jpg&quot;</span>.format(
+                    img_counter)
+                cv2.imwrite(img_name3, img)
+                print(<span class="s3">&quot;{} written&quot;</span>.format(img_name3))
+
+                img_counter += <span class="s4">1</span>
+
+
+running = <span class="s2">False</span>
+
+
+<span class="s2">def </span>run():
+    <span class="s2">global </span>running
+    cap = cv2.VideoCapture(<span class="s4">0</span>, cv2.CAP_DSHOW)
+    width = cap.get(cv2.CAP_PROP_FRAME_WIDTH)
+    height = cap.get(cv2.CAP_PROP_FRAME_HEIGHT)
+    label.resize(int(width), int(height))
+    <span class="s2">while </span>running:
+        ret1, img1 = cap.read()
+        <span class="s2">if </span>ret1:
+            img1 = cv2.cvtColor(img1, cv2.COLOR_BGR2RGB)
+            h, w, c = img1.shape
+            qImg = QtGui.QImage(img1.data, w, h, w * c, QtGui.QImage.Format_RGB888)
+            pixmap = QtGui.QPixmap.fromImage(qImg)
+            label.setPixmap(pixmap)
+        <span class="s2">else</span>:
+            QtWidgets.QMessageBox.about(win, <span class="s3">&quot;Error&quot;</span>, <span class="s3">&quot;Cannot read frame.&quot;</span>)
+            print(<span class="s3">&quot;cannot read frame.&quot;</span>)
+            <span class="s2">break</span>
+    cap.release()
+    print(<span class="s3">&quot;Thread end.&quot;</span>)
+
+
+<span class="s2">def </span>stop():
+    exit(<span class="s4">0</span>)
+
+
+<span class="s2">def </span>start():
+    <span class="s2">global </span>running
+    running = <span class="s2">True</span>
+    th = threading.Thread(target=run)
+    th.start()
+    print(<span class="s3">&quot;started..&quot;</span>)
+
+
+<span class="s2">def </span>onExit():
+    print(<span class="s3">&quot;exit&quot;</span>)
+    stop()
+
+
+
+app = QtWidgets.QApplication([])
+win = QtWidgets.QWidget()
+win.setStyleSheet(<span class="s3">&quot;background-color: white;&quot;</span>
+                  )
+win.setFixedSize(<span class="s4">640</span>,<span class="s4">960</span>)
+vbox = QtWidgets.QVBoxLayout()
+label = QtWidgets.QLabel()
+label.setFixedSize(<span class="s4">620</span>,<span class="s4">540</span>)
+label.setStyleSheet(<span class="s3">&quot;margin:50px;&quot;</span>
+                    <span class="s3">&quot;border-style:solid; &quot;</span>
+                    <span class="s3">&quot;border-color:black; border-width:5px; border-radius:10px;&quot;</span>
+                    )
+<span class="s0">#shadow1=QGraphicsDropShadowEffect()</span>
+<span class="s0">#shadow1.setBlurRadius(50)</span>
+<span class="s0">#label.setGraphicsEffect(shadow1)</span>
+<span class="s0">#label.setAlignment(Qt.AlignCenter)</span>
+<span class="s0"># label.setStyleSheelt(QString(&quot;border-width: 2px, border-style: solid;&quot;));</span>
+btn_start = QtWidgets.QPushButton(<span class="s3">&quot;  CAMERA ON  &quot;</span>)
+btn_start.setStyleSheet(<span class="s3">&quot;color: white;&quot;</span>
+                        <span class="s3">&quot;background-color: #0371f4;&quot;  </span>
+                        <span class="s3">&quot;border-radius:28px;&quot;</span>
+                        <span class="s3">&quot;font:20px;&quot;</span>
+                        <span class="s3">&quot;border-width: 3px;&quot;</span>
+                        <span class="s3">&quot;max-width:8em;&quot;</span>
+                        <span class="s0">#&quot;margin:50px;&quot;</span>
+                        <span class="s3">&quot;margin-left:180px;&quot;</span>
+                        <span class="s3">&quot;padding: 15px;&quot;</span>
+                        <span class="s3">&quot;font-family: Arial Black&quot;</span>)
+<span class="s0">#shadow2=QGraphicsDropShadowEffect()</span>
+<span class="s0">#shadow2.setBlurRadius(1)</span>
+<span class="s0">#btn_start.setGraphicsEffect(shadow2)</span>
+btn_stop = QtWidgets.QPushButton(<span class="s3">&quot;  CAMERA OFF  &quot;</span>)
+btn_stop.setStyleSheet(<span class="s3">&quot;color: white;&quot;</span>
+                        <span class="s3">&quot;background-color: #0371f4;&quot;  </span>
+                        <span class="s3">&quot;border-radius:28px;&quot;</span>
+                        <span class="s3">&quot;font:20px;&quot;</span>
+                        <span class="s3">&quot;border-width: 3px;&quot;</span>
+                        <span class="s3">&quot;max-width:8em;&quot;</span>
+                        <span class="s0">#&quot;margin:10px;&quot;</span>
+                        <span class="s3">&quot;margin-left:180px;&quot;</span>
+                        <span class="s3">&quot;padding: 15px;&quot;</span>
+                        <span class="s3">&quot;font-family: Arial Black&quot;</span>
+                        )
+<span class="s0">#shadow3=QGraphicsDropShadowEffect()</span>
+<span class="s0">#shadow3.setBlurRadius(1)</span>
+<span class="s0">#btn_stop.setGraphicsEffect(shadow3)</span>
+vbox.addWidget(label)
+vbox.addWidget(btn_start)
+vbox.addWidget(btn_stop)
+win.setLayout(vbox)
+win.show()
+
+
+
+btn_start.clicked.connect(start)
+btn_stop.clicked.connect(stop)
+<span class="s0"># app.aboutToQuit.connect(onExit)</span>
+run1()
+sys.exit(app.exec_())
+
+</pre>
+</body>
+</html>
